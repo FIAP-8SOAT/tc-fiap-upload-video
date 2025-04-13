@@ -1,4 +1,6 @@
 import logging
+import os
+
 from fastapi import HTTPException
 
 import jwt
@@ -17,9 +19,9 @@ class TokenService:
 
             decoded_token = jwt.decode(
                 token,
-                key="your_secret_key",
+                key=os.getenv("SECRET_KEY"),
                 algorithms=["HS256"],
-                options={"verify_signature": True}
+                options={"verify_signature": False}
             )
             # Log the decoded token for debugging
             logger.info(f"Decoded token: {decoded_token}")

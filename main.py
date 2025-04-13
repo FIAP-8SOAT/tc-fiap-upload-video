@@ -22,10 +22,10 @@ async def on_shutdown():
 
 @app.post("/upload")
 async def upload_file(
-        file: UploadFile = File(...),
+        file: list[UploadFile] = File(...),
         authorization: str = Header(...)
 ):
-    s3_repo = S3Repository("bucket_name_test")
+    s3_repo = S3Repository("fiapeats-bucket-s3")
     db_repo = DBRepository("table_name_test")
     upload_video_use_case = UploadVideoUseCase(s3_repo, db_repo)
 
@@ -39,8 +39,7 @@ async def upload_file(
     # Chama o caso de uso de upload
     try:
         result = await upload_video_use_case.execute(file, token)
-        logger.info(f"Upload successful for file: {file.filename}")
-        return {"message": "Upload realizado", "details": result}
+        return {"details": result}
 
     except HTTPException as e:
         raise HTTPException(e.status_code, e.detail)

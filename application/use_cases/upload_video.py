@@ -13,7 +13,7 @@ class UploadVideoUseCase:
         self.s3_repo = s3_repo
         self.db_repo = db_repo
 
-    async def execute(self, files: UploadFile, token, simulate=True):
+    async def execute(self, files: UploadFile, token):
         setup_logging()
         logger = logging.getLogger(__name__)
         try:
@@ -32,32 +32,50 @@ class UploadVideoUseCase:
                 logger.error("Máximo de 5 vídeos permitidos.")
                 raise HTTPException(status_code=400, detail="Máximo de 5 vídeos permitidos")
 
-            uploaded_videos = []
+            video_responses = []
 
-            for file in files:
-                video = Video(
-                    file_name=file.filename,  # Access filename attribute
-                    file_size=file.spool_max_size,  # Access file size attribute
-                    content=await file.read(),  # Read file content
-                    user_email=user_email
-                )
-                logger.info(f"Processando vídeo: {video.file_name}")
+            for index, file in enumerate(files, start=1):
+                try:
+                    content = await file.read()
+                    file_size = len(content)  # File size in bytes
 
-                if video.file_size > (50 * 1024 * 1024):  # Máx 50MB
-                    raise HTTPException(status_code=400, detail="Tamanho máximo permitido é 50MB")
+                    # Validate file size (e.g., max 50MB)
+                    max_size = 50 * 1024 * 1024  # 50MB
+                    if file_size > max_size:
+                        logger.error(f"Tamanho do vídeo {file.filename} excede 50MB.")
+                        video_responses.append({
+                            "video": f"Video {index}",
+                            "details": f"Nome: {file.filename}, Tamanho: {file_size} bytes",
+                            "status": "Erro: Tamanho máximo permitido é 50MB"
+                        })
+                        continue
 
-                if simulate:
-                    uploaded_videos.append({
-                        "user_email": video.user_email,
-                        "file_name": video.file_name,
-                        "size": video.file_size
-                    })
-                else:
+                    video = Video(
+                        file_name=file.filename,
+                        file_size=file_size,
+                        content=content,
+                        user_email=user_email
+                    )
+                    logger.info(f"Processando vídeo: {video.file_name}")
+
                     s3_key = self.s3_repo.upload_video(video)
                     self.db_repo.register_video(video, s3_key)
-                    uploaded_videos.append(s3_key)
 
-            return {"message": "Upload concluído", "videos": uploaded_videos}, 200
+                    video_responses.append({
+                        "video": file.filename,
+                        "details": f"Nome: {file.filename}, Tamanho: {file_size} bytes, Usuário: {user_email}",
+                        "status": "Sucesso"
+                    })
+
+                except Exception as e:
+                    logger.error(f"Erro ao processar o vídeo {file.filename}: {str(e)}")
+                    video_responses.append({
+                        "video": file.filename,
+                        "details": f"Nome: {file.filename}, Tamanho: {file_size} bytes, Usuário: {user_email}",
+                        "status": f"Erro: {str(e)}"
+                    })
+
+            return video_responses
 
         except HTTPException as e:
             raise HTTPException(e.status_code, e.detail)
