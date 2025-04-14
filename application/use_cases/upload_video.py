@@ -17,8 +17,6 @@ class UploadVideoUseCase:
         setup_logging()
         logger = logging.getLogger(__name__)
         try:
-            """ Processa o upload de vídeos, podendo rodar no modo simulado """
-
             user_email = TokenService.extract_user_email(token)
 
             if not user_email:
@@ -27,10 +25,13 @@ class UploadVideoUseCase:
 
             logger.info("Files recebidos para upload: %s", files)
             if not isinstance(files, list):
-                files = [files]  # Wrap single file into a list
+                files = [files]
             if len(files) > 5:
                 logger.error("Máximo de 5 vídeos permitidos.")
                 raise HTTPException(status_code=400, detail="Máximo de 5 vídeos permitidos")
+            if not files:
+                logger.error("Não há arquivos para upload.")
+                raise HTTPException(status_code=400, detail="Não há arquivos para upload.")
 
             video_responses = []
 

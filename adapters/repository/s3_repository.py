@@ -7,7 +7,6 @@ import uuid
 
 
 def configure_s3_client(bucket_name_var):
-    """Configures the S3 client based on the environment."""
     # Valid bucket name
     bucket_name = bucket_name_var
 
