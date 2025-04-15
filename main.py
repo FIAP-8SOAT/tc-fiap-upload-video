@@ -1,6 +1,7 @@
 import logging
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, UploadFile, Header, HTTPException
+from fastapi import FastAPI, File, UploadFile, Header, HTTPException, Request
 from application.use_cases.upload_video import UploadVideoUseCase
 from infrastructure.logging.logging_config import setup_logging
 from adapters.repository.s3_repository import S3Repository
@@ -10,21 +11,19 @@ from adapters.repository.db_repository import DBRepository
 setup_logging()
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
 
-
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.info("Application startup: Initializing resources.")
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
+    yield
     logger.info("Application shutdown: Cleaning up resources.")
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/upload")
 async def upload_file(
+        request: Request,
         file: list[UploadFile] = File(...),
         authorization: str = Header(...)
 ):
@@ -32,6 +31,9 @@ async def upload_file(
         if not authorization.startswith("Bearer "):
             logger.warning("Invalid token format.")
             raise HTTPException(status_code=401, detail="Token inválido")
+
+        if not request.headers.get("content-type", "").startswith("multipart/form-data"):
+            raise HTTPException(status_code=400, detail="Requisição deve ser multipart/form-data")
 
         s3_repo = S3Repository("fiapeats-bucket-s3")
         db_repo = DBRepository("table_name_test")

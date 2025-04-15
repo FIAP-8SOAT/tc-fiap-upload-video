@@ -13,7 +13,8 @@ class UploadVideoUseCase:
         self.s3_repo = s3_repo
         self.db_repo = db_repo
 
-    async def execute(self, files: UploadFile, token):
+    async def execute(self, files: list[UploadFile], token):
+        global file_size
         setup_logging()
         logger = logging.getLogger(__name__)
         try:
@@ -45,12 +46,20 @@ class UploadVideoUseCase:
                     if file_size > max_size:
                         logger.error(f"Tamanho do vídeo {file.filename} excede 50MB.")
                         video_responses.append({
-                            "video": f"Video {index}",
-                            "details": f"Nome: {file.filename}, Tamanho: {file_size} bytes",
+                            "video": file.filename,
+                            "details": f"Nome: {file.filename}, Tamanho: {(file_size / (1024 * 1024)): .2f} MB",
                             "status": "Erro: Tamanho máximo permitido é 50MB"
                         })
                         continue
-
+                    allowed_types = ["video/mp4", "video/mpeg", "video/quicktime"]
+                    if file.content_type not in allowed_types:
+                        logger.error(f"Tipo de mídia inválido: {file.content_type}")
+                        video_responses.append({
+                            "video": file.filename,
+                            "details": f"Nome: {file.filename}, Tamanho: {(file_size / (1024 * 1024)): .2f} MB",
+                            "status": f"Erro: Tipo de mídia inválido: {file.content_type}"
+                        })
+                        continue
                     video = Video(
                         file_name=file.filename,
                         file_size=file_size,
@@ -61,10 +70,9 @@ class UploadVideoUseCase:
 
                     s3_key = self.s3_repo.upload_video(video)
                     self.db_repo.register_video(video, s3_key)
-
                     video_responses.append({
                         "video": file.filename,
-                        "details": f"Nome: {file.filename}, Tamanho: {file_size} bytes, Usuário: {user_email}",
+                        "details": f"Nome: {file.filename}, Tamanho: {(file_size / (1024 * 1024)): .2f} MB, Usuário: {user_email}",
                         "status": "Sucesso"
                     })
 
@@ -72,7 +80,7 @@ class UploadVideoUseCase:
                     logger.error(f"Erro ao processar o vídeo {file.filename}: {str(e)}")
                     video_responses.append({
                         "video": file.filename,
-                        "details": f"Nome: {file.filename}, Tamanho: {file_size} bytes, Usuário: {user_email}",
+                        "details": f"Nome: {file.filename}, Tamanho: {(file_size / (1024 * 1024)): .2f} MB, Usuário: {user_email}",
                         "status": f"Erro: {str(e)}"
                     })
 

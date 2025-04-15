@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException, UploadFile
 from application.use_cases.upload_video import UploadVideoUseCase
-from domain.entities.video import Video
 
 
 @pytest.fixture
@@ -24,6 +23,7 @@ async def test_execute_successful_upload(upload_video_use_case, mock_s3_repo, mo
     mock_file = AsyncMock(spec=UploadFile)
     mock_file.filename = "video.mp4"
     mock_file.read.return_value = b"fake_video_content"
+    mock_file.content_type = "video/mp4"  # Set a valid content type
 
     with patch("application.services.token_service.TokenService.extract_user_email", return_value=mock_user_email):
         response = await upload_video_use_case.execute([mock_file], mock_token)
@@ -32,6 +32,7 @@ async def test_execute_successful_upload(upload_video_use_case, mock_s3_repo, mo
     assert response[0]["status"] == "Sucesso"
     mock_s3_repo.upload_video.assert_called_once()
     mock_db_repo.register_video.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_execute_token_missing_email(upload_video_use_case):
@@ -79,6 +80,9 @@ async def test_execute_s3_upload_error(upload_video_use_case, mock_s3_repo):
     mock_file = AsyncMock(spec=UploadFile)
     mock_file.filename = "video.mp4"
     mock_file.read.return_value = b"fake_video_content"
+    mock_file.content_type = "video/mp4"  # Mock content type
+
+    # Simulate the S3 upload error
     mock_s3_repo.upload_video.side_effect = Exception("S3 upload error")
 
     with patch("application.services.token_service.TokenService.extract_user_email", return_value=mock_user_email):
@@ -87,6 +91,7 @@ async def test_execute_s3_upload_error(upload_video_use_case, mock_s3_repo):
     assert len(response) == 1
     assert response[0]["status"] == "Erro: S3 upload error"
 
+
 @pytest.mark.asyncio
 async def test_execute_db_register_error(upload_video_use_case, mock_s3_repo, mock_db_repo):
     mock_token = "valid_token"
@@ -94,10 +99,14 @@ async def test_execute_db_register_error(upload_video_use_case, mock_s3_repo, mo
     mock_file = AsyncMock(spec=UploadFile)
     mock_file.filename = "video.mp4"
     mock_file.read.return_value = b"fake_video_content"
+    mock_file.content_type = "video/mp4"  # Mock content type for the file
+
+    # Simulate DB registration error
     mock_db_repo.register_video.side_effect = Exception("DB register error")
 
     with patch("application.services.token_service.TokenService.extract_user_email", return_value=mock_user_email):
         response = await upload_video_use_case.execute([mock_file], mock_token)
 
+    # Assert that the response contains the correct error message
     assert len(response) == 1
     assert response[0]["status"] == "Erro: DB register error"

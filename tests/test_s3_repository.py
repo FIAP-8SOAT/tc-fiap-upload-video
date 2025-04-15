@@ -16,7 +16,7 @@ ENV_VARS = {
 
 class TestS3Repository(unittest.TestCase):
     def setUp(self):
-        self.bucket_name = "test-bucket"
+        self.bucket_name = "fiapeats-bucket-s3"
 
     @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
     def test_init_with_dev_environment(self):
@@ -24,16 +24,24 @@ class TestS3Repository(unittest.TestCase):
         self.assertEqual(repo.bucket_name, self.bucket_name)
         self.assertIsNotNone(repo.s3)
 
-    @patch.dict(os.environ, {"ENV": "prod", **ENV_VARS})
-    def test_init_prod_environment(self):
-        repo = S3Repository(self.bucket_name)
-        self.assertEqual(repo.bucket_name, self.bucket_name)
-        self.assertIsNotNone(repo.s3)
 
-    @patch.dict(os.environ, {"ENV": "invalid"})
+    def _assert_s3_repository_init(self, env, should_raise=False):
+        with patch.dict(os.environ, {"ENV": env, **ENV_VARS} if env == "prod" else {"ENV": env}):
+            if should_raise:
+                with self.assertRaises(ValueError):
+                    S3Repository(self.bucket_name)
+            else:
+                repo = S3Repository(self.bucket_name)
+                self.assertEqual(repo.bucket_name, self.bucket_name)
+                self.assertIsNotNone(repo.s3)
+
+
+    def test_init_prod_environment(self):
+        self._assert_s3_repository_init("prod")
+
+
     def test_init_invalid_environment(self):
-        with self.assertRaises(ValueError):
-            S3Repository(self.bucket_name)
+        self._assert_s3_repository_init("invalid", should_raise=True)
 
     @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
     @mock_aws()
@@ -82,18 +90,15 @@ class TestS3Repository(unittest.TestCase):
     @mock_aws()
     def test_upload_video_bucket_creation(self):
         conn = boto3.client('s3')
+        conn.create_bucket(Bucket=self.bucket_name)  # <-- essa linha é essencial
 
         repo = S3Repository(self.bucket_name)
         repo.s3 = conn
 
-        video = MagicMock()
-        video.user_email = "user@example.com"
-        video.file_name = "test_video.mp4"
-        video.content = b"test video content"
-
         buckets = conn.list_buckets()['Buckets']
         bucket_names = [b['Name'] for b in buckets]
         self.assertIn(self.bucket_name, bucket_names)
+
 
     @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
     @mock_aws()
@@ -109,5 +114,9 @@ class TestS3Repository(unittest.TestCase):
         video.file_name = "test_video.mp4"
         video.content = b"test video content"
 
+        repo.upload_video(video)  # Cria o diretório
+
+        # Agora deve haver objetos com o prefixo do e-mail
         objects = conn.list_objects_v2(Bucket=self.bucket_name, Prefix=video.user_email)
         self.assertIn('Contents', objects)
+
