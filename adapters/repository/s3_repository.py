@@ -1,3 +1,5 @@
+import logging
+
 from boto3 import s3
 from dotenv import load_dotenv
 import os
@@ -5,12 +7,17 @@ import os
 import boto3
 import uuid
 
+from infrastructure.logging.logging_config import setup_logging
+
+# Setup logging
+setup_logging()
+logger = logging.getLogger(__name__)
+
 
 def configure_s3_client(bucket_name_var):
     # Valid bucket name
     bucket_name = bucket_name_var
 
-    # Create the bucket if it doesn't exist
     try:
         s3.head_bucket(Bucket=bucket_name)
     except s3.exceptions.ClientError:
@@ -49,34 +56,37 @@ class S3Repository:
 
     def upload_video(self, video):
         """Faz upload do vídeo para o S3"""
-        # Ensure the bucket exists
+        global file_key
         try:
+            logger.info(f"Uploading video '{video.file_name}' to S3 bucket '{self.bucket_name}'")
             self.s3.head_bucket(Bucket=self.bucket_name)
+            # Diretório do usuário
+            user_directory = f"{video.user_email}/"
+
+            # Verifica se o diretório do usuário já existe
+            existing_objects = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=user_directory)
+            if 'Contents' not in existing_objects:
+                # Diretório do usuário não existe, cria um objeto vazio para representá-lo
+                self.s3.put_object(Bucket=self.bucket_name, Key=user_directory)
+
+            # Caminho completo do arquivo (subpasta com o nome do vídeo)
+            video_directory = f"{user_directory}{video.file_name}/"
+            existing_video_objects = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=video_directory)
+            if 'Contents' in existing_video_objects:
+                # Retorna uma mensagem de erro indicando que o vídeo já existe
+                raise ValueError(f"O vídeo '{video.file_name}' já está carregado. Por favor, consultar o status do vídeo.")
+
+            # Cria a subpasta do vídeo
+            self.s3.put_object(Bucket=self.bucket_name, Key=video_directory)
+
+            # Faz o upload do vídeo
+            file_key = f"{video_directory}{uuid.uuid4()}_{video.file_name}"
+            self.s3.put_object(Bucket=self.bucket_name, Key=file_key, Body=video.content)
+
         except self.s3.exceptions.ClientError:
             self.s3.create_bucket(Bucket=self.bucket_name)
             print(f"Bucket '{self.bucket_name}' created successfully.")
-
-        # Diretório do usuário
-        user_directory = f"{video.user_email}/"
-
-        # Verifica se o diretório do usuário já existe
-        existing_objects = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=user_directory)
-        if 'Contents' not in existing_objects:
-            # Diretório do usuário não existe, cria um objeto vazio para representá-lo
-            self.s3.put_object(Bucket=self.bucket_name, Key=user_directory)
-
-        # Caminho completo do arquivo (subpasta com o nome do vídeo)
-        video_directory = f"{user_directory}{video.file_name}/"
-        existing_video_objects = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=video_directory)
-        if 'Contents' in existing_video_objects:
-            # Retorna uma mensagem de erro indicando que o vídeo já existe
-            raise ValueError(f"O vídeo '{video.file_name}' já está carregado. Por favor, consultar o status do vídeo.")
-
-        # Cria a subpasta do vídeo
-        self.s3.put_object(Bucket=self.bucket_name, Key=video_directory)
-
-        # Faz o upload do vídeo
-        file_key = f"{video_directory}{uuid.uuid4()}_{video.file_name}"
-        self.s3.put_object(Bucket=self.bucket_name, Key=file_key, Body=video.content)
-
+        except Exception as e:
+            logger.error(f"Error uploading to bucket: {e}")
+            raise
         return file_key, None

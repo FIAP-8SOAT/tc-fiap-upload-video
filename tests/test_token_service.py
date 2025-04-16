@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import os
 import jwt
 from fastapi import HTTPException
 from application.services.token_service import TokenService
@@ -31,9 +30,9 @@ class TestTokenService(unittest.TestCase):
             self.valid_token,
             key="secret_key",
             algorithms=["HS256"],
-            options={"verify_signature": False}
+            options={'verify_signature': False, 'verify_exp': True, 'verify_iat': True}
         )
-        self.logger_mock.info.assert_called_once_with(f"Decoded token: {self.valid_payload}")
+        self.logger_mock.info.assert_called_once_with(f"Email extraído do token JWT: {self.test_email}")
 
     @patch('os.getenv')
     @patch('jwt.decode')
@@ -48,7 +47,7 @@ class TestTokenService(unittest.TestCase):
             TokenService.extract_user_email(self.valid_token)
 
         self.assertEqual(context.exception.status_code, 401)
-        self.assertIn("Email não encontrado no token", context.exception.detail)
+        self.assertIn("Erro ao obter email do Cognito", context.exception.detail)
 
     @patch('os.getenv')
     @patch('jwt.decode')
@@ -134,7 +133,7 @@ class TestTokenService(unittest.TestCase):
         mock_get_logger.return_value = self.logger_mock
 
         with self.assertRaises(HTTPException) as context:
-            TokenService.extract_user_email(None)
+            TokenService.extract_user_email("")
 
         self.assertEqual(context.exception.status_code, 401)
         self.assertIn("Token não fornecido", context.exception.detail)

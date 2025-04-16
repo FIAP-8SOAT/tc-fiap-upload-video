@@ -108,6 +108,14 @@ aws s3api list-objects --bucket fiapeats-bucket-s3 --endpoint-url=http://localho
 aws s3 rm s3://fiapeats-bucket-s3 --recursive --endpoint-url=http://localhost:4566
 ```
 
+**AWS COGNITO**
+4. Criar um User Pool
+```bash
+aws cognito-idp create-user-pool --pool-name fiapeats-user-pool
+
+```
+
+
 ---
 
 ## 📚 Estrutura do Projeto
