@@ -69,7 +69,7 @@ class UploadVideoUseCase:
                     logger.info(f"Processando vídeo: {video.file_name}")
 
                     s3_key = self.s3_repo.upload_video(video)
-                    self.db_repo.register_video(video, s3_key)
+                    self.db_repo.register_video(video)
                     video_responses.append({
                         "video": file.filename,
                         "details": f"Nome: {file.filename}, Tamanho: {(file_size / (1024 * 1024)): .2f} MB, Usuário: {user_email}",

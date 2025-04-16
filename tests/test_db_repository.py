@@ -51,7 +51,7 @@ def test_register_video_inserts_item(mock_dynamodb):
     os.environ["ENV"] = "dev"
     repo = DBRepository("Videos")
     video = FakeVideo("user@example.com", "video.mp4")
-    repo.register_video(video, "s3/test/video.mp4")
+    repo.register_video(video)
 
     response = repo.table.scan()
     items = response['Items']
@@ -77,6 +77,6 @@ def test_register_video_logs_error_on_failure(caplog, mock_dynamodb):
 
     with mock.patch.object(repo.table, "put_item", side_effect=Exception("Erro")):
         with pytest.raises(Exception, match="Erro"):
-            repo.register_video(FakeVideo("a@a.com", "b.mp4"), "key")
+            repo.register_video(FakeVideo("a@a.com", "b.mp4"))
 
     assert "Erro ao registrar vídeo no DynamoDB" in caplog.text
