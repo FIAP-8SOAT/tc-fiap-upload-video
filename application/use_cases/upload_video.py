@@ -15,14 +15,19 @@ class UploadVideoUseCase:
 
     async def execute(self, files: list[UploadFile], token):
         global file_size
+        user_id: str;
+
         setup_logging()
         logger = logging.getLogger(__name__)
         try:
-            user_email = TokenService.extract_user_email(token)
+            user_email, user_id = TokenService.extract_user_email_and_user_id(token)
 
             if not user_email:
                 logger.error("E-mail não encontrado no Token.")
                 raise HTTPException(status_code=403, detail="E-mail não encontrado no Token")
+            if not user_id:
+                logger.error("Usuario Não encontrado no Token.")
+                raise HTTPException(status_code=403, detail="Usuario não encontrado no Token")
 
             logger.info("Files recebidos para upload: %s", files)
             if not isinstance(files, list):
@@ -64,7 +69,8 @@ class UploadVideoUseCase:
                         file_name=file.filename,
                         file_size=file_size,
                         content=content,
-                        user_email=user_email
+                        user_email=user_email,
+                        user_id=user_id
                     )
                     logger.info(f"Processando vídeo: {video.file_name}")
 

@@ -24,7 +24,7 @@ class DBRepository:
             )
         else:
             logger.info("Inicializando DBRepository em modo PROD (AWS)")
-            self.dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+            self.dynamodb = boto3.resource('dynamodb', region_name=os.getenv("REGION_NAME"))
 
             # Buscar e exibir o endpoint URL apenas em produção
             logger.info(f"Endpoint URL do DynamoDB (AWS): {self.dynamodb.meta.client.meta.endpoint_url}")
@@ -54,7 +54,8 @@ class DBRepository:
         try:
             item = {
                 "id": str(uuid.uuid4()),
-                "ID_USUARIO": video.user_email,
+                "ID_USUARIO": video.user_id,
+                "EMAIL": video.user_email,
                 "STATUS_PROCESSAMENTO": "PENDENTE_PROCESSAMENTO",
                 "URL_DOWNLOAD": "",
                 "NOME_VIDEO": video.file_name

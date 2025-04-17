@@ -16,7 +16,7 @@ ENV_VARS = {
 
 class TestS3Repository(unittest.TestCase):
     def setUp(self):
-        self.bucket_name = "fiapeats-bucket-s3"
+        self.bucket_name = "fiapeats-bucket-videos-s3"
 
     @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
     def test_init_with_dev_environment(self):

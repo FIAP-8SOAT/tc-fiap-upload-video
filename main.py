@@ -36,7 +36,7 @@ async def upload_file(
         if not request.headers.get("content-type", "").startswith("multipart/form-data"):
             raise HTTPException(status_code=400, detail="Requisição deve ser multipart/form-data")
 
-        s3_repo = S3Repository("fiapeats-bucket-s3")
+        s3_repo = S3Repository("fiapeats-bucket-videos-s3")
         db_repo = DBRepository("fiapeatsdb")
         upload_video_use_case = UploadVideoUseCase(s3_repo, db_repo)
 

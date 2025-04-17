@@ -42,7 +42,7 @@ def test_init_dev_environment_creates_table_if_not_exists(mock_dynamodb):
 
 def test_table_is_created_if_not_exists(mock_dynamodb):
     os.environ["ENV"] = "dev"
-    dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+    dynamodb = boto3.resource("dynamodb", region_name=os.getenv("REGION_NAME"))
     table_names = dynamodb.meta.client.list_tables()["TableNames"]
     assert "Videos" in table_names
 
