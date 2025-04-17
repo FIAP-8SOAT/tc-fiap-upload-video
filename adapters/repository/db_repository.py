@@ -1,3 +1,4 @@
+import asyncio
 import os
 import boto3
 import uuid
@@ -50,7 +51,7 @@ class DBRepository:
             logger.error(f"Erro ao verificar/criar tabela: {e}")
             raise
 
-    def register_video(self, video):
+    async def register_video(self, video):
         try:
             item = {
                 "id": str(uuid.uuid4()),
@@ -62,7 +63,7 @@ class DBRepository:
             }
 
             logger.info(f"Inserindo item no DynamoDB: {item}")
-            self.table.put_item(Item=item)
+            await asyncio.to_thread(self.table.put_item, Item=item)
 
         except Exception as e:
             logger.error(f"Erro ao registrar vídeo no DynamoDB: {str(e)}")

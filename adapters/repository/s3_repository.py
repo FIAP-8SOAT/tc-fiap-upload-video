@@ -1,29 +1,15 @@
 import logging
-
-from boto3 import s3
-from dotenv import load_dotenv
 import os
-
-import boto3
 import uuid
+
+import aioboto3
+from dotenv import load_dotenv
 
 from infrastructure.logging.logging_config import setup_logging
 
 # Setup logging
 setup_logging()
 logger = logging.getLogger(__name__)
-
-
-def configure_s3_client(bucket_name_var):
-    # Valid bucket name
-    bucket_name = bucket_name_var
-
-    try:
-        s3.head_bucket(Bucket=bucket_name)
-    except s3.exceptions.ClientError:
-        s3.create_bucket(Bucket=bucket_name)
-
-    return s3
 
 
 class S3Repository:
@@ -35,58 +21,44 @@ class S3Repository:
         env_file = f"config/.env.{env}"
         load_dotenv(env_file)
 
-        # Configure the S3 client
-        if env == "dev":
-            self.s3 = boto3.client(
-                "s3",
-                endpoint_url=os.getenv("ENDPOINT_URL"),
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                region_name=os.getenv("REGION_NAME"),
-            )
-        elif env == "prod":
-            self.s3 = boto3.client(
-                "s3",
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                region_name=os.getenv("REGION_NAME"),
-            )
-        else:
-            raise ValueError(f"Unknown environment: {env}")
+        self.env = env
+        self.endpoint_url = os.getenv("ENDPOINT_URL") if env == "dev" else None
+        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
+        self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        self.region_name = os.getenv("REGION_NAME")
 
-    def upload_video(self, video):
-        """Faz upload do vídeo para o S3"""
-        global file_key
+    async def upload_video(self, video):
+        """Faz upload assíncrono do vídeo para o S3"""
         try:
             logger.info(f"Uploading video '{video.file_name}' to S3 bucket '{self.bucket_name}'")
-            self.s3.head_bucket(Bucket=self.bucket_name)
-            # Diretório do usuário
-            user_directory = f"{video.user_email}/"
 
-            # Verifica se o diretório do usuário já existe
-            existing_objects = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=user_directory)
-            if 'Contents' not in existing_objects:
-                # Diretório do usuário não existe, cria um objeto vazio para representá-lo
-                self.s3.put_object(Bucket=self.bucket_name, Key=user_directory)
+            session = aioboto3.Session()
+            async with session.client(
+                    "s3",
+                    endpoint_url=self.endpoint_url,
+                    aws_access_key_id=self.aws_access_key_id,
+                    aws_secret_access_key=self.aws_secret_access_key,
+                    region_name=self.region_name
+            ) as s3:
 
-            # Caminho completo do arquivo (subpasta com o nome do vídeo)
-            video_directory = f"{user_directory}{video.file_name}/"
-            existing_video_objects = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=video_directory)
-            if 'Contents' in existing_video_objects:
-                # Retorna uma mensagem de erro indicando que o vídeo já existe
-                raise ValueError(f"O vídeo '{video.file_name}' já está carregado. Por favor, consultar o status do vídeo.")
+                # Diretório do usuário
+                user_directory = f"{video.user_email}/"
+                video_directory = f"{user_directory}{video.file_name}/"
+                file_key = f"{video_directory}{uuid.uuid4()}_{video.file_name}"
 
-            # Cria a subpasta do vídeo
-            self.s3.put_object(Bucket=self.bucket_name, Key=video_directory)
+                # Verifica se o vídeo já existe
+                response = await s3.list_objects_v2(Bucket=self.bucket_name, Prefix=video_directory)
+                if 'Contents' in response:
+                    raise ValueError(f"O vídeo '{video.file_name}' já está carregado. Por favor, consultar o status do vídeo.")
 
-            # Faz o upload do vídeo
-            file_key = f"{video_directory}{uuid.uuid4()}_{video.file_name}"
-            self.s3.put_object(Bucket=self.bucket_name, Key=file_key, Body=video.content)
+                # Garante criação das "pastas" (S3 é flat, mas usamos chaves simulando diretórios)
+                await s3.put_object(Bucket=self.bucket_name, Key=video_directory)
 
-        except self.s3.exceptions.ClientError:
-            self.s3.create_bucket(Bucket=self.bucket_name)
-            print(f"Bucket '{self.bucket_name}' created successfully.")
+                # Upload do vídeo
+                await s3.put_object(Bucket=self.bucket_name, Key=file_key, Body=video.content)
+
+                return file_key, None
+
         except Exception as e:
-            logger.error(f"Error uploading to bucket: {e}")
+            logger.error(f"Erro no upload do vídeo: {e}")
             raise
-        return file_key, None
