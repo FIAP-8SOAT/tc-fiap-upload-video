@@ -128,9 +128,8 @@ jobs:
 
       - name: Copy source code to package
         run: |
-          cp -r *.py ./package/
-          # Copie também subdiretórios se houver
-          if [ -d app ]; then cp -r app ./package/; fi
+          cp main.py package/
+          cp -r adapters application repository domain infrastructure config package/
 
       - name: Install zip
         run: sudo apt-get update && sudo apt-get install zip -y
@@ -160,7 +159,7 @@ jobs:
           RUNTIME="python3.10"
           ROLE_ARN="${{ secrets.LAMBDA_ROLE_ARN }}"
           BUCKET_NAME=${{ secrets.S3_BUCKET }}
-
+          
           echo "Verificando se função '$FUNCTION_NAME' existe..."
           if aws lambda get-function --function-name "$FUNCTION_NAME" 2>/dev/null; then
             echo "Função existe. Atualizando código..."
@@ -183,3 +182,4 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.REGION_NAME }}
           ZIP_KEY: ${{ env.ZIP_KEY }}
+
