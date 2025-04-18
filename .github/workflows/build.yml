@@ -49,7 +49,7 @@ jobs:
   integration_system_tests:
     name: Integration and System Tests
     runs-on: ubuntu-latest
-    needs: unit_tests
+    needs: setup
     steps:
       - uses: actions/checkout@v4
 
@@ -68,7 +68,7 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
-    needs: unit_tests
+    needs: setup
     steps:
       - uses: actions/checkout@v4
 
@@ -87,7 +87,7 @@ jobs:
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
-    needs: coverage
+    needs: [coverage, integration_system_tests, unit_tests]
     steps:
       - uses: actions/checkout@v4
         with:
