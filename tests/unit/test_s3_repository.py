@@ -1,11 +1,40 @@
+import json
 import unittest
 from unittest.mock import patch, AsyncMock, MagicMock
 import os
 import uuid
 
+import boto3
+
 from adapters.repository.s3_repository import S3Repository
 
 class TestS3RepositoryAsync(unittest.IsolatedAsyncioTestCase):
+
+    def test_mock_secretsmanager(self):
+        mock_secret = {
+            "AWS_ACCESS_KEY_ID": "texto",
+            "AWS_SECRET_ACCESS_KEY": "texto"
+        }
+
+        with patch("boto3.client") as mock_client:
+            # Mock the client and its get_secret_value method
+            mock_instance = MagicMock()
+            mock_instance.get_secret_value.return_value = {
+                "SecretString": json.dumps(mock_secret)
+            }
+            mock_client.return_value = mock_instance
+
+            # Code under test
+            client = boto3.client('secretsmanager')
+            response = client.get_secret_value(SecretId='my/aws/creds')
+            secret = json.loads(response['SecretString'])
+
+            os.environ["AWS_ACCESS_KEY_ID"] = secret["AWS_ACCESS_KEY_ID"]
+            os.environ["AWS_SECRET_ACCESS_KEY"] = secret["AWS_SECRET_ACCESS_KEY"]
+
+            # Assertions
+            assert os.environ["AWS_ACCESS_KEY_ID"] == "texto"
+            assert os.environ["AWS_SECRET_ACCESS_KEY"] == "texto"
 
     def setUp(self):
         self.bucket_name = "test-bucket"
@@ -13,6 +42,20 @@ class TestS3RepositoryAsync(unittest.IsolatedAsyncioTestCase):
         self.video_mock.user_email = "user@example.com"
         self.video_mock.file_name = "test.mp4"
         self.video_mock.content = b"dummy_content"
+        # Mock SecretsManager
+        self.secrets_patcher = patch("boto3.client")
+        mock_client = self.secrets_patcher.start()
+        mock_instance = MagicMock()
+        mock_instance.get_secret_value.return_value = {
+            "SecretString": json.dumps({
+                "AWS_ACCESS_KEY_ID": "test-key",
+                "AWS_SECRET_ACCESS_KEY": "test-secret"
+            })
+        }
+        mock_client.return_value = mock_instance
+
+    def tearDown(self):
+        self.secrets_patcher.stop()
 
     @patch.dict(os.environ, {
         "ENV": "dev",
