@@ -2,111 +2,133 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException, UploadFile
 from application.use_cases.upload_video import UploadVideoUseCase
-
-
-@pytest.fixture
-def mock_s3_repo():
-    return MagicMock()
-
-@pytest.fixture
-def mock_db_repo():
-    return MagicMock()
-
-@pytest.fixture
-def upload_video_use_case(mock_s3_repo, mock_db_repo):
-    return UploadVideoUseCase(mock_s3_repo, mock_db_repo)
-
-@pytest.mark.asyncio
-async def test_execute_successful_upload(upload_video_use_case, mock_s3_repo, mock_db_repo):
-    mock_token = "valid_token"
-    mock_user_email = "user@example.com"
-    mock_file = AsyncMock(spec=UploadFile)
-    mock_file.filename = "video.mp4"
-    mock_file.read.return_value = b"fake_video_content"
-    mock_file.content_type = "video/mp4"  # Set a valid content type
-
-    with patch("application.services.token_service.TokenService.extract_user_email", return_value=mock_user_email):
-        response = await upload_video_use_case.execute([mock_file], mock_token)
-
-    assert len(response) == 1
-    assert response[0]["status"] == "Sucesso"
-    mock_s3_repo.upload_video.assert_called_once()
-    mock_db_repo.register_video.assert_called_once()
+from adapters.repository.s3_repository import S3Repository
+from adapters.repository.db_repository import DBRepository
 
 
 @pytest.mark.asyncio
-async def test_execute_token_missing_email(upload_video_use_case):
-    mock_token = "invalid_token"
-    mock_file = AsyncMock(spec=UploadFile)
+class TestUploadVideoUseCase:
 
-    with patch("application.services.token_service.TokenService.extract_user_email", return_value=None):
-        with pytest.raises(HTTPException) as exc_info:
-            await upload_video_use_case.execute([mock_file], mock_token)
+    @pytest.fixture
+    def setup_use_case(self):
+        s3_repo = AsyncMock(spec=S3Repository)
+        db_repo = AsyncMock(spec=DBRepository)
+        use_case = UploadVideoUseCase(s3_repo=s3_repo, db_repo=db_repo)
+        return use_case, s3_repo, db_repo
 
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "E-mail não encontrado no Token"
+    @pytest.fixture
+    def mock_token_service(self):
+        with patch("application.services.token_service.TokenService.extract_user_email_and_user_id") as mock:
+            yield mock
 
-@pytest.mark.asyncio
-async def test_execute_exceeds_max_files(upload_video_use_case):
-    mock_token = "valid_token"
-    mock_user_email = "user@example.com"
-    mock_files = [AsyncMock(spec=UploadFile) for _ in range(6)]
+    @pytest.fixture
+    def mock_upload_file(self):
+        def create_mocked_file(filename, content_type, size):
+            file = MagicMock(spec=UploadFile)
+            file.filename = filename
+            file.content_type = content_type
+            file.read = AsyncMock(return_value=b"a" * size)
+            return file
+        return create_mocked_file
 
-    with patch("application.services.token_service.TokenService.extract_user_email", return_value=mock_user_email):
-        with pytest.raises(HTTPException) as exc_info:
-            await upload_video_use_case.execute(mock_files, mock_token)
+    async def test_execute_success(self, setup_use_case, mock_token_service, mock_upload_file):
+        use_case, s3_repo, db_repo = setup_use_case
+        mock_token_service.return_value = ("user@example.com", "12345")
+        file = mock_upload_file("video.mp4", "video/mp4", 10 * 1024 * 1024)
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "Máximo de 5 vídeos permitidos"
+        response = await use_case.execute([file], token="mock_token")
 
-@pytest.mark.asyncio
-async def test_execute_file_exceeds_max_size(upload_video_use_case):
-    mock_token = "valid_token"
-    mock_user_email = "user@example.com"
-    mock_file = AsyncMock(spec=UploadFile)
-    mock_file.filename = "large_video.mp4"
-    mock_file.read.return_value = b"a" * (50 * 1024 * 1024 + 1)  # Exceeds 50MB
+        assert response[0]["status"] == "Sucesso"
+        s3_repo.upload_video.assert_called_once()
+        db_repo.register_video.assert_called_once()
 
-    with patch("application.services.token_service.TokenService.extract_user_email", return_value=mock_user_email):
-        response = await upload_video_use_case.execute([mock_file], mock_token)
+    async def test_execute_no_email_in_token(self, setup_use_case, mock_token_service, mock_upload_file):
+        use_case, _, _ = setup_use_case
+        mock_token_service.return_value = (None, "12345")
+        file = mock_upload_file("video.mp4", "video/mp4", 10 * 1024 * 1024)
 
-    assert len(response) == 1
-    assert response[0]["status"] == "Erro: Tamanho máximo permitido é 50MB"
+        with pytest.raises(HTTPException) as exc:
+            await use_case.execute([file], token="mock_token")
 
-@pytest.mark.asyncio
-async def test_execute_s3_upload_error(upload_video_use_case, mock_s3_repo):
-    mock_token = "valid_token"
-    mock_user_email = "user@example.com"
-    mock_file = AsyncMock(spec=UploadFile)
-    mock_file.filename = "video.mp4"
-    mock_file.read.return_value = b"fake_video_content"
-    mock_file.content_type = "video/mp4"  # Mock content type
+        assert exc.value.status_code == 403
+        assert exc.value.detail == "E-mail não encontrado no Token"
 
-    # Simulate the S3 upload error
-    mock_s3_repo.upload_video.side_effect = Exception("S3 upload error")
+    async def test_execute_no_user_id_in_token(self, setup_use_case, mock_token_service, mock_upload_file):
+        use_case, _, _ = setup_use_case
+        mock_token_service.return_value = ("user@example.com", None)
+        file = mock_upload_file("video.mp4", "video/mp4", 10 * 1024 * 1024)
 
-    with patch("application.services.token_service.TokenService.extract_user_email", return_value=mock_user_email):
-        response = await upload_video_use_case.execute([mock_file], mock_token)
+        with pytest.raises(HTTPException) as exc:
+            await use_case.execute([file], token="mock_token")
 
-    assert len(response) == 1
-    assert response[0]["status"] == "Erro: S3 upload error"
+        assert exc.value.status_code == 403
+        assert exc.value.detail == "Usuário não encontrado no Token"
 
+    async def test_execute_more_than_5_files(self, setup_use_case, mock_token_service, mock_upload_file):
+        use_case, _, _ = setup_use_case
+        mock_token_service.return_value = ("user@example.com", "12345")
+        files = [mock_upload_file(f"video_{i}.mp4", "video/mp4", 10 * 1024 * 1024) for i in range(6)]
 
-@pytest.mark.asyncio
-async def test_execute_db_register_error(upload_video_use_case, mock_s3_repo, mock_db_repo):
-    mock_token = "valid_token"
-    mock_user_email = "user@example.com"
-    mock_file = AsyncMock(spec=UploadFile)
-    mock_file.filename = "video.mp4"
-    mock_file.read.return_value = b"fake_video_content"
-    mock_file.content_type = "video/mp4"  # Mock content type for the file
+        with pytest.raises(HTTPException) as exc:
+            await use_case.execute(files, token="mock_token")
 
-    # Simulate DB registration error
-    mock_db_repo.register_video.side_effect = Exception("DB register error")
+        assert exc.value.status_code == 400
+        assert exc.value.detail == "Máximo de 5 vídeos permitidos"
 
-    with patch("application.services.token_service.TokenService.extract_user_email", return_value=mock_user_email):
-        response = await upload_video_use_case.execute([mock_file], mock_token)
+    async def test_execute_no_files(self, setup_use_case, mock_token_service):
+        use_case, _, _ = setup_use_case
+        mock_token_service.return_value = ("user@example.com", "12345")
 
-    # Assert that the response contains the correct error message
-    assert len(response) == 1
-    assert response[0]["status"] == "Erro: DB register error"
+        with pytest.raises(HTTPException) as exc:
+            await use_case.execute([], token="mock_token")
+
+        assert exc.value.status_code == 400
+        assert exc.value.detail == "Não há arquivos para upload."
+
+    async def test_execute_file_exceeds_size(self, setup_use_case, mock_token_service, mock_upload_file):
+        use_case, _, _ = setup_use_case
+        mock_token_service.return_value = ("user@example.com", "12345")
+        file = mock_upload_file("video.mp4", "video/mp4", 60 * 1024 * 1024)
+
+        response = await use_case.execute([file], token="mock_token")
+
+        assert response[0]["status"] == "Erro: Tamanho máximo permitido é 50MB"
+
+    async def test_execute_invalid_file_type(self, setup_use_case, mock_token_service, mock_upload_file):
+        use_case, _, _ = setup_use_case
+        mock_token_service.return_value = ("user@example.com", "12345")
+        file = mock_upload_file("video.avi", "video/avi", 10 * 1024 * 1024)
+
+        response = await use_case.execute([file], token="mock_token")
+
+        assert response[0]["status"] == "Erro: Tipo de mídia inválido: video/avi"
+
+    async def test_execute_error_in_s3_upload(self, setup_use_case, mock_token_service, mock_upload_file):
+        use_case, s3_repo, _ = setup_use_case
+        mock_token_service.return_value = ("user@example.com", "12345")
+        file = mock_upload_file("video.mp4", "video/mp4", 10 * 1024 * 1024)
+        s3_repo.upload_video.side_effect = Exception("S3 upload failed")
+
+        response = await use_case.execute([file], token="mock_token")
+
+        assert "Erro: S3 upload failed" in response[0]["status"]
+
+    async def test_execute_error_in_db_register(self, setup_use_case, mock_token_service, mock_upload_file):
+        use_case, _, db_repo = setup_use_case
+        mock_token_service.return_value = ("user@example.com", "12345")
+        file = mock_upload_file("video.mp4", "video/mp4", 10 * 1024 * 1024)
+        db_repo.register_video.side_effect = Exception("DB register failed")
+
+        response = await use_case.execute([file], token="mock_token")
+
+        assert "Erro: DB register failed" in response[0]["status"]
+
+    async def test_execute_general_exception(self, setup_use_case, mock_token_service):
+        use_case, _, _ = setup_use_case
+        mock_token_service.side_effect = Exception("General error")
+
+        with pytest.raises(HTTPException) as exc:
+            await use_case.execute([], token="mock_token")
+
+        assert exc.value.status_code == 500
+        assert "General error" in exc.value.detail

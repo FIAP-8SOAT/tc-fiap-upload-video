@@ -1,122 +1,98 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, AsyncMock, MagicMock
 import os
-import boto3
-from moto import mock_aws  # ou mock_s3 se for a versão antiga
+import uuid
+
 from adapters.repository.s3_repository import S3Repository
 
-# Definimos fora da classe pois será usado pelos decorators
-ENV_VARS = {
-    "ENDPOINT_URL": "http://localhost:4566",
-    "AWS_ACCESS_KEY_ID": "test-access-key",
-    "AWS_SECRET_ACCESS_KEY": "test-secret-key",
-    "REGION_NAME": "us-east-1"
-}
+class TestS3RepositoryAsync(unittest.IsolatedAsyncioTestCase):
 
-
-class TestS3Repository(unittest.TestCase):
     def setUp(self):
-        self.bucket_name = "fiapeats-bucket-videos-s3"
+        self.bucket_name = "test-bucket"
+        self.video_mock = MagicMock()
+        self.video_mock.user_email = "user@example.com"
+        self.video_mock.file_name = "test.mp4"
+        self.video_mock.content = b"dummy_content"
 
-    @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
-    def test_init_with_dev_environment(self):
+    @patch.dict(os.environ, {
+        "ENV": "dev",
+        "ENDPOINT_URL": "http://localhost:4566",
+        "AWS_ACCESS_KEY_ID": "test-key",
+        "AWS_SECRET_ACCESS_KEY": "test-secret",
+        "REGION_NAME": "us-east-1"
+    })
+    def test_init_should_load_correct_env_vars(self):
         repo = S3Repository(self.bucket_name)
         self.assertEqual(repo.bucket_name, self.bucket_name)
-        self.assertIsNotNone(repo.s3)
+        self.assertEqual(repo.env, "dev")
+        self.assertEqual(repo.endpoint_url, "http://localhost:4566")
+        self.assertEqual(repo.aws_access_key_id, "test-key")
+        self.assertEqual(repo.aws_secret_access_key, "test-secret")
+        self.assertEqual(repo.region_name, "us-east-1")
 
+    @patch("aioboto3.Session.client")
+    @patch("uuid.uuid4", return_value=uuid.UUID("12345678123456781234567812345678"))
+    @patch.dict(os.environ, {
+        "ENV": "dev",
+        "ENDPOINT_URL": "http://localhost:4566",
+        "AWS_ACCESS_KEY_ID": "test-key",
+        "AWS_SECRET_ACCESS_KEY": "test-secret",
+        "REGION_NAME": "us-east-1"
+    })
+    async def test_upload_video_success(self, mock_uuid, mock_client):
+        # Arrange
+        s3_client_mock = AsyncMock()
+        mock_client.return_value.__aenter__.return_value = s3_client_mock
 
-    def _assert_s3_repository_init(self, env, should_raise=False):
-        with patch.dict(os.environ, {"ENV": env, **ENV_VARS} if env == "prod" else {"ENV": env}):
-            if should_raise:
-                with self.assertRaises(ValueError):
-                    S3Repository(self.bucket_name)
-            else:
-                repo = S3Repository(self.bucket_name)
-                self.assertEqual(repo.bucket_name, self.bucket_name)
-                self.assertIsNotNone(repo.s3)
-
-
-    def test_init_prod_environment(self):
-        self._assert_s3_repository_init("prod")
-
-
-    def test_init_invalid_environment(self):
-        self._assert_s3_repository_init("invalid", should_raise=True)
-
-    @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
-    @mock_aws()
-    def test_upload_video_success(self):
-        conn = boto3.client('s3')
-        conn.create_bucket(Bucket=self.bucket_name)
+        s3_client_mock.list_objects_v2.return_value = {}
 
         repo = S3Repository(self.bucket_name)
-        repo.s3 = conn
 
-        video = MagicMock()
-        video.user_email = "user@example.com"
-        video.file_name = "test_video.mp4"
-        video.content = b"test video content"
+        # Act
+        file_key, error = await repo.upload_video(self.video_mock)
 
-        file_key, error = repo.upload_video(video)
-
-        self.assertIsNotNone(file_key)
+        # Assert
+        expected_key = f"{self.video_mock.user_email}/{self.video_mock.file_name}/12345678-1234-5678-1234-567812345678_{self.video_mock.file_name}"
+        self.assertEqual(file_key, expected_key)
         self.assertIsNone(error)
-        self.assertIn(video.user_email, file_key)
-        self.assertIn(video.file_name, file_key)
+        s3_client_mock.list_objects_v2.assert_called_once()
+        s3_client_mock.put_object.assert_any_await(Bucket=self.bucket_name, Key=f"{self.video_mock.user_email}/{self.video_mock.file_name}/")
+        s3_client_mock.put_object.assert_any_await(Bucket=self.bucket_name, Key=expected_key, Body=self.video_mock.content)
 
-    @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
-    @mock_aws()
-    def test_upload_video_duplicate(self):
-        conn = boto3.client('s3')
-        conn.create_bucket(Bucket=self.bucket_name)
+    @patch("aioboto3.Session.client")
+    @patch.dict(os.environ, {
+        "ENV": "dev",
+        "ENDPOINT_URL": "http://localhost:4566",
+        "AWS_ACCESS_KEY_ID": "test-key",
+        "AWS_SECRET_ACCESS_KEY": "test-secret",
+        "REGION_NAME": "us-east-1"
+    })
+    async def test_upload_video_already_exists_should_raise(self, mock_client):
+        s3_client_mock = AsyncMock()
+        mock_client.return_value.__aenter__.return_value = s3_client_mock
 
-        user_dir = "user@example.com/"
-        video_dir = f"{user_dir}test_video.mp4/"
-        conn.put_object(Bucket=self.bucket_name, Key=user_dir)
-        conn.put_object(Bucket=self.bucket_name, Key=video_dir)
-
-        repo = S3Repository(self.bucket_name)
-        repo.s3 = conn
-
-        video = MagicMock()
-        video.user_email = "user@example.com"
-        video.file_name = "test_video.mp4"
-        video.content = b"test video content"
-
-        with self.assertRaises(ValueError):
-            repo.upload_video(video)
-
-    @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
-    @mock_aws()
-    def test_upload_video_bucket_creation(self):
-        conn = boto3.client('s3')
-        conn.create_bucket(Bucket=self.bucket_name)  # <-- essa linha é essencial
+        s3_client_mock.list_objects_v2.return_value = {"Contents": [{"Key": "some/key"}]}
 
         repo = S3Repository(self.bucket_name)
-        repo.s3 = conn
 
-        buckets = conn.list_buckets()['Buckets']
-        bucket_names = [b['Name'] for b in buckets]
-        self.assertIn(self.bucket_name, bucket_names)
+        with self.assertRaises(ValueError) as context:
+            await repo.upload_video(self.video_mock)
 
+        self.assertIn("já está carregado", str(context.exception))
+        s3_client_mock.list_objects_v2.assert_called_once()
 
-    @patch.dict(os.environ, {"ENV": "dev", **ENV_VARS})
-    @mock_aws()
-    def test_upload_video_user_directory_creation(self):
-        conn = boto3.client('s3')
-        conn.create_bucket(Bucket=self.bucket_name)
-
+    @patch("aioboto3.Session.client", side_effect=Exception("Falha no S3"))
+    @patch.dict(os.environ, {
+        "ENV": "dev",
+        "ENDPOINT_URL": "http://localhost:4566",
+        "AWS_ACCESS_KEY_ID": "test-key",
+        "AWS_SECRET_ACCESS_KEY": "test-secret",
+        "REGION_NAME": "us-east-1"
+    })
+    async def test_upload_video_general_exception(self, mock_client):
         repo = S3Repository(self.bucket_name)
-        repo.s3 = conn
 
-        video = MagicMock()
-        video.user_email = "newuser@example.com"
-        video.file_name = "test_video.mp4"
-        video.content = b"test video content"
+        with self.assertRaises(Exception) as context:
+            await repo.upload_video(self.video_mock)
 
-        repo.upload_video(video)  # Cria o diretório
-
-        # Agora deve haver objetos com o prefixo do e-mail
-        objects = conn.list_objects_v2(Bucket=self.bucket_name, Prefix=video.user_email)
-        self.assertIn('Contents', objects)
-
+        self.assertIn("Falha no S3", str(context.exception))

@@ -38,6 +38,7 @@ class UploadVideoUseCase:
                 raise HTTPException(status_code=400, detail="Não há arquivos para upload.")
 
             async def process_video(file: UploadFile):
+                global file_size
                 try:
                     content = await file.read()
                     file_size = len(content)
@@ -86,12 +87,14 @@ class UploadVideoUseCase:
                         "status": f"Erro: {str(e)}"
                     }
 
-            video_responses = await asyncio.gather(*[
-                process_video(file) for file in files
-            ])
+            video_responses = await asyncio.gather(*[process_video(file) for file in files])
 
             return video_responses
 
+        except HTTPException as http_exc:
+            # Relevante para retornar o status code correto
+            self.logger.error(f"Erro específico na execução do upload: {http_exc.detail}")
+            raise http_exc
         except Exception as e:
             self.logger.error(f"Erro geral na execução do upload: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
