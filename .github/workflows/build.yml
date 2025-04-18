@@ -87,6 +87,7 @@ jobs:
   sonarqube:
     name: SonarQube
     runs-on: ubuntu-latest
+    needs: coverage
     steps:
       - uses: actions/checkout@v4
         with:
@@ -114,6 +115,13 @@ jobs:
     needs: verify_aws
     steps:
       - uses: actions/checkout@v4
+
+      # Gerar o arquivo .zip com o código da função Lambda
+      - name: Create ZIP for Lambda function
+        run: |
+          zip -r function.zip ./*
+
+      # Deploy para AWS Lambda
       - name: Deploy to AWS Lambda
         run: |
           aws lambda update-function-code \
@@ -125,3 +133,4 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.REGION_NAME }}
           ENV: ${{ secrets.ENV }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
