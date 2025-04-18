@@ -116,21 +116,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Gerar o arquivo .zip com o código da função Lambda
-      - name: Create ZIP for Lambda function
-        run: |
-          zip -r function.zip ./*
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install zip -y
 
-      # Deploy para AWS Lambda
-      - name: Deploy to AWS Lambda
+      - name: Zip Lambda function
         run: |
-          aws lambda update-function-code \
-            --function-name my-lambda-function \
-            --zip-file fileb://function.zip
+          zip -r function.zip . -x "*.git*" ".github/*"
+
+      - name: Deploy Lambda (create if not exists)
+        run: |
+          FUNCTION_NAME="tc-fiap-upload-video"
+          HANDLER="index.handler" 
+          RUNTIME="python3.10"     
+          ROLE_ARN="${{ secrets.LAMBDA_ROLE_ARN }}"
+
+          echo "Verificando se função '$FUNCTION_NAME' existe..."
+          if aws lambda get-function --function-name "$FUNCTION_NAME" 2>/dev/null; then
+            echo "Função existe. Atualizando código..."
+            aws lambda update-function-code \
+              --function-name "$FUNCTION_NAME" \
+              --zip-file fileb://function.zip
+          else
+            echo "Função não existe. Criando..."
+            aws lambda create-function \
+              --function-name "$FUNCTION_NAME" \
+              --runtime "$RUNTIME" \
+              --role "$ROLE_ARN" \
+              --handler "$HANDLER" \
+              --zip-file fileb://function.zip
+          fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.REGION_NAME }}
-          ENV: ${{ secrets.ENV }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
 
