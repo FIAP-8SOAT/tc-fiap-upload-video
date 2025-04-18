@@ -122,20 +122,25 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install dependencies into local folder
         run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install -r config/requirements.txt
+          pip install --target ./package -r config/requirements.txt
+
+      - name: Copy source code to package
+        run: |
+          cp -r *.py ./package/
+          # Copie também subdiretórios se houver
+          if [ -d app ]; then cp -r app ./package/; fi
 
       - name: Install zip
         run: sudo apt-get update && sudo apt-get install zip -y
 
       - name: Zip Lambda function
         run: |
-          zip -r function.zip . -x "*.git*" ".github/*"
+          cd package
+          zip -r ../function.zip .
           echo "Tamanho do arquivo function.zip:"
-          du -h function.zip
+          du -h ../function.zip
 
       - name: Upload zip to S3
         run: |
