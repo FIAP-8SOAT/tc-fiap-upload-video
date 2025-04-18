@@ -50,7 +50,7 @@ class S3Repository:
             ) as s3:
 
                 # Diretório do usuário
-                user_directory = f"{video.user_email}/"
+                user_directory = f"{video.user_id}/"
                 video_directory = f"{user_directory}{video.file_name}/"
                 file_key = f"{video_directory}{uuid.uuid4()}_{video.file_name}"
 
