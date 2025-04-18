@@ -1,12 +1,12 @@
 import logging
 import os
-from typing import Any, Tuple
+from typing import Any
 
 import boto3
 import botocore
 import jwt
 from fastapi import HTTPException
-from jwt import PyJWKClient
+from jwt import PyJWKClient, PyJWK
 
 from infrastructure.logging.logging_config import setup_logging
 
@@ -18,13 +18,13 @@ def obter_user_pool_id() -> str:
 
         user_pools = response.get("UserPools", [])
         if not user_pools:
-            return None
+            return ""
 
         return user_pools[0]["Id"]
 
     except botocore.exceptions.BotoCoreError as e:
         print(f"Erro ao acessar Cognito: {e}")
-    return None
+    return ""
 
 
 class TokenService:
@@ -73,7 +73,7 @@ class TokenService:
         if not token:
             raise HTTPException(status_code=401, detail="Token não fornecido")
 
-        secret_key = os.getenv("SECRET_KEY")
+        secret_key = os.getenv("SECRET_KEY", "teste")
         if not secret_key:
             raise HTTPException(status_code=500, detail="Configuração SECRET_KEY não encontrada")
 
@@ -88,7 +88,7 @@ class TokenService:
         # Se o e-mail não estiver no JWT, tentamos buscar via Cognito
         logger.info("Email não encontrado no token, tentando buscar via Cognito.")
         email_retry = TokenService.get_email_from_cognito(token)
-        user_id = decoded_token.get("client_id", None);
+        user_id = decoded_token.get("client_id", None)
         logging.info(f"User_id extraído do token JWT: {user_id}")
         if not email_retry:
             raise HTTPException(status_code=401, detail="Email não encontrado no token nem no Cognito")
@@ -98,12 +98,12 @@ class TokenService:
         return email_retry, user_id
 
     @staticmethod
-    def extract_signature(token: str) -> str:
+    def extract_signature(token: str) -> PyJWK:
         user_pool_id = obter_user_pool_id()
         # URL do JWKS do seu User Pool
         jwks_url = f"https://cognito-idp.{os.getenv('REGION_NAME')}.amazonaws.com/{user_pool_id}/.well-known/jwks.json"
 
         # Pega a chave pública correta com base no 'kid' do token
         jwks_client = PyJWKClient(jwks_url)
-        return jwks_client.get_signing_key_from_jwt(token);
+        return jwks_client.get_signing_key_from_jwt(token)
 

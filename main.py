@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, UploadFile, Header, HTTPException, Request
+from mangum import Mangum
 
 from application.use_cases.upload_video import UploadVideoUseCase
 from infrastructure.logging.logging_config import setup_logging
@@ -52,3 +53,6 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Error during upload: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error.")
+
+# Adaptador para Lambda
+handler = Mangum(app)
