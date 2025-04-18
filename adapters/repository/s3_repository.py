@@ -1,8 +1,10 @@
+import json
 import logging
 import os
 import uuid
 
 import aioboto3
+import boto3
 from dotenv import load_dotenv
 
 from infrastructure.logging.logging_config import setup_logging
@@ -15,6 +17,12 @@ logger = logging.getLogger(__name__)
 class S3Repository:
     def __init__(self, bucket_name):
         self.bucket_name = bucket_name
+        client = boto3.client('secretsmanager')
+        response = client.get_secret_value(SecretId='my/aws/creds')
+        secret = json.loads(response['SecretString'])
+
+        os.environ["AWS_ACCESS_KEY_ID"] = secret["AWS_ACCESS_KEY_ID"]
+        os.environ["AWS_SECRET_ACCESS_KEY"] = secret["AWS_SECRET_ACCESS_KEY"]
 
         # Load the appropriate .env file based on the ENV variable
         env = os.getenv("ENV", "dev")
@@ -23,8 +31,8 @@ class S3Repository:
 
         self.env = env
         self.endpoint_url = os.getenv("ENDPOINT_URL") if env == "dev" else None
-        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
-        self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        self.aws_access_key_id = os.environ["AWS_ACCESS_KEY_ID"]
+        self.aws_secret_access_key = os.environ["AWS_SECRET_ACCESS_KEY"]
         self.region_name = os.getenv("REGION_NAME")
 
     async def upload_video(self, video):
