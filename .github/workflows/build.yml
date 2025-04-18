@@ -134,6 +134,8 @@ jobs:
       - name: Zip Lambda function
         run: |
           zip -r function.zip . -x "*.git*" ".github/*"
+          echo "Tamanho do arquivo function.zip:"
+          du -h function.zip
 
       - name: Deploy Lambda (create if not exists)
         run: |
