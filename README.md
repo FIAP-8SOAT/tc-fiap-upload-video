@@ -77,7 +77,7 @@ curl --location 'http://localhost:8000/upload' \
 
 ## 📁 Armazenamento
 
-- **S3 Bucket**: `fiapeats-bucket-s3`
+- **S3 Bucket**: `fiapeats-bucket-videos-s3`
     - Vídeos são enviados com chave única baseada no nome e email do usuário.
 - **DynamoDB Table**: `table_name_test` (em dev/localstack)
     - Cada entrada contém: `id`, `user_email`, `file_name`, `s3_key`, `status`, `created_at`
@@ -100,13 +100,21 @@ docker-compose up
 
 2. Verifique arquivos enviados:
 ```bash
-aws s3api list-objects --bucket fiapeats-bucket-s3 --endpoint-url=http://localhost:4566
+aws s3api list-objects --bucket fiapeats-bucket-videos-s3 --endpoint-url=http://localhost:4566
 ```
 
 3. Limpe o bucket:
 ```bash
-aws s3 rm s3://fiapeats-bucket-s3 --recursive --endpoint-url=http://localhost:4566
+aws s3 rm s3://fiapeats-bucket-videos-s3 --recursive --endpoint-url=http://localhost:4566
 ```
+
+**AWS COGNITO**
+4. Criar um User Pool
+```bash
+aws cognito-idp create-user-pool --pool-name fiapeats-user-pool
+
+```
+
 
 ---
 

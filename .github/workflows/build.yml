@@ -1,0 +1,193 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r config/requirements.txt
+
+  unit_tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install test dependencies
+        run: pip install -r config/requirements.txt
+      - name: Run unit tests
+        run: pytest tests/unit --junitxml=unit-test-results.xml
+
+  integration_system_tests:
+    name: Integration and System Tests
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install test dependencies
+        run: pip install -r config/requirements.txt
+
+      - name: Run integration and system tests
+        run: pytest tests/unit --junitxml=integration-system-test-results.xml
+
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install coverage dependencies
+        run: pip install -r config/requirements.txt
+
+      - name: Run coverage
+        run: pytest --cov=. --cov-report=term --cov-report=xml:coverage.xml tests/unit
+
+
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    needs: [coverage, integration_system_tests, unit_tests]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  verify_aws:
+    name: Verify AWS
+    runs-on: ubuntu-latest
+    needs: sonarqube
+    steps:
+      - name: Verify AWS credentials
+        run: aws sts get-caller-identity
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.REGION_NAME }}
+
+  deploy_lambda:
+    name: Deploy AWS Lambda
+    runs-on: ubuntu-latest
+    needs: verify_aws
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies into local folder
+        run: |
+          pip install --target ./package -r config/requirements.txt
+
+      - name: Copy source code to package
+        run: |
+          cp main.py package/
+          cp -r adapters package/
+          cp -r application package/
+          cp -r application/use_cases package/application/
+          cp -r domain package/
+          cp -r domain/entities package/domain/
+          cp -r infrastructure package/
+          cp -r infrastructure/logging package/infrastructure/
+          cp -r config package/
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install zip -y
+
+      - name: Zip Lambda function
+        run: |
+          cd package
+          zip -r ../function.zip .
+          echo "Tamanho do arquivo function.zip:"
+          du -h ../function.zip
+
+      - name: Upload zip to S3
+        run: |
+          BUCKET_NAME=${{ secrets.S3_BUCKET }}
+          ZIP_KEY="lambda-deploys/function-$(date +%s).zip"
+          aws s3 cp function.zip s3://$BUCKET_NAME/$ZIP_KEY
+          echo "ZIP_KEY=$ZIP_KEY" >> $GITHUB_ENV
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.REGION_NAME }}
+
+      - name: Deploy Lambda from S3
+        run: |
+          FUNCTION_NAME="tc-fiap-upload-video"
+          HANDLER="main.handler"
+          RUNTIME="python3.10"
+          ROLE_ARN="${{ secrets.LAMBDA_ROLE_ARN }}"
+          BUCKET_NAME=${{ secrets.S3_BUCKET }}
+
+          echo "Verificando se função '$FUNCTION_NAME' existe..."
+          if aws lambda get-function --function-name "$FUNCTION_NAME" 2>/dev/null; then
+            echo "Função existe. Atualizando código..."
+            aws lambda update-function-code \
+              --function-name "$FUNCTION_NAME" \
+              --s3-bucket "$BUCKET_NAME" \
+              --s3-key "$ZIP_KEY"
+          else
+            echo "Função não existe. Criando..."
+            aws lambda create-function \
+              --function-name "$FUNCTION_NAME" \
+              --runtime "$RUNTIME" \
+              --role "$ROLE_ARN" \
+              --handler "$HANDLER" \
+              --s3-bucket "$BUCKET_NAME" \
+              --s3-key "$ZIP_KEY"
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.REGION_NAME }}
+          ZIP_KEY: ${{ env.ZIP_KEY }}
+
+

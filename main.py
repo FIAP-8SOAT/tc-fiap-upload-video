@@ -2,6 +2,8 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, UploadFile, Header, HTTPException, Request
+from mangum import Mangum
+
 from application.use_cases.upload_video import UploadVideoUseCase
 from infrastructure.logging.logging_config import setup_logging
 from adapters.repository.s3_repository import S3Repository
@@ -35,8 +37,8 @@ async def upload_file(
         if not request.headers.get("content-type", "").startswith("multipart/form-data"):
             raise HTTPException(status_code=400, detail="Requisição deve ser multipart/form-data")
 
-        s3_repo = S3Repository("fiapeats-bucket-s3")
-        db_repo = DBRepository("table_name_test")
+        s3_repo = S3Repository("fiapeats-bucket-videos-s3")
+        db_repo = DBRepository("fiapeatsdb")
         upload_video_use_case = UploadVideoUseCase(s3_repo, db_repo)
 
         token = authorization.split("Bearer ")[1]
@@ -51,3 +53,6 @@ async def upload_file(
     except Exception as e:
         logger.error(f"Error during upload: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error.")
+
+# Adaptador para Lambda
+handler = Mangum(app)

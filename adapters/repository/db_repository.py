@@ -1,8 +1,9 @@
+import asyncio
 import os
+
 import boto3
 import uuid
 import logging
-from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
@@ -23,11 +24,14 @@ class DBRepository:
                 aws_access_key_id="test",
                 aws_secret_access_key="test"
             )
-            self._ensure_table_exists()
         else:
             logger.info("Inicializando DBRepository em modo PROD (AWS)")
-            self.dynamodb = boto3.resource('dynamodb')
+            self.dynamodb = boto3.resource('dynamodb', region_name=os.getenv("REGION_NAME"))
 
+            # Buscar e exibir o endpoint URL apenas em produção
+            logger.info(f"Endpoint URL do DynamoDB (AWS): {self.dynamodb.meta.client.meta.endpoint_url}")
+
+        self._ensure_table_exists()
         self.table = self.dynamodb.Table(self.table_name)
 
     def _ensure_table_exists(self):
@@ -48,19 +52,19 @@ class DBRepository:
             logger.error(f"Erro ao verificar/criar tabela: {e}")
             raise
 
-    def register_video(self, video, s3_key: str):
+    async def register_video(self, video):
         try:
             item = {
                 "id": str(uuid.uuid4()),
-                "user_email": video.user_email,
-                "file_name": video.file_name,
-                "s3_key": s3_key,
-                "status": "PENDENTE_PROCESSAMENTO",
-                "created_at": str(datetime.now(timezone.utc))
+                "ID_USUARIO": video.user_id,
+                "EMAIL": video.user_email,
+                "STATUS_PROCESSAMENTO": "PENDENTE_PROCESSAMENTO",
+                "URL_DOWNLOAD": "",
+                "NOME_VIDEO": video.file_name
             }
 
             logger.info(f"Inserindo item no DynamoDB: {item}")
-            self.table.put_item(Item=item)
+            await asyncio.to_thread(self.table.put_item, Item=item)
 
         except Exception as e:
             logger.error(f"Erro ao registrar vídeo no DynamoDB: {str(e)}")
