@@ -53,6 +53,7 @@ class S3Repository:
                 user_directory = f"{video.user_id}/"
                 video_directory = f"{user_directory}{video.file_name}/"
                 file_key = f"{video_directory}{video.file_name}"
+                video.path_s3 = file_key;
 
                 # Verifica se o vídeo já existe
                 response = await s3.list_objects_v2(Bucket=self.bucket_name, Prefix=video_directory)
