@@ -66,7 +66,8 @@ class UploadVideoUseCase:
                         file_size=file_size,
                         content=content,
                         user_email=user_email,
-                        user_id=user_id
+                        user_id=user_id,
+                        path_s3=""
                     )
 
                     self.logger.info(f"Processando vídeo: {video.file_name}")
