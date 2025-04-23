@@ -60,7 +60,8 @@ class DBRepository:
                 "EMAIL": video.user_email,
                 "STATUS_PROCESSAMENTO": "PENDENTE_PROCESSAMENTO",
                 "URL_DOWNLOAD": "",
-                "NOME_VIDEO": video.file_name
+                "NOME_VIDEO": video.file_name,
+                "PATH_S3": video.path_s3
             }
 
             logger.info(f"Inserindo item no DynamoDB: {item}")

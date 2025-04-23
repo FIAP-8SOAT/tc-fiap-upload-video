@@ -96,7 +96,7 @@ class TestS3RepositoryAsync(unittest.IsolatedAsyncioTestCase):
         file_key, error = await repo.upload_video(self.video_mock)
 
         # Assert
-        expected_key = f"{self.video_mock.user_id}/{self.video_mock.file_name}/12345678-1234-5678-1234-567812345678_{self.video_mock.file_name}"
+        expected_key = f"{self.video_mock.user_id}/{self.video_mock.file_name}/{self.video_mock.file_name}"
         self.assertEqual(file_key, expected_key)
         self.assertIsNone(error)
         s3_client_mock.list_objects_v2.assert_called_once()
